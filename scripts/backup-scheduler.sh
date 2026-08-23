@@ -45,13 +45,47 @@ if [ "${SCHEDULER_ONE_SHOT:-0}" = "1" ]; then
 fi
 
 log "Backup scheduler starting: interval(${BACKUP_INTERVAL_MINUTES}m), daily(${RETENTION_DAYS}d at ${DAILY_TIME}:00), monthly(${RETENTION_MONTHS}mo)"
+
+# Readiness gate: on a fresh stack the databases may still be importing when
+# this container starts. Backing up mid-import produces either alert noise
+# (databases absent) or - worse - a verified-complete backup of incomplete
+# data. Wait (bounded) for the probe table before taking any backup; on
+# timeout, proceed anyway so non-standard layouts are not blocked forever.
+probe_ready() {
+  local probe="${BACKUP_READY_PROBE:-acore_auth.account}"
+  local n
+  n=$(mysql_cmd -s -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='${probe%%.*}' AND table_name='${probe##*.}';" 2>/dev/null) || return 1
+  [ "$n" = "1" ]
+}
+READY_TIMEOUT="${BACKUP_READY_TIMEOUT_SECONDS:-900}"
+if [ "$READY_TIMEOUT" -gt 0 ] 2>/dev/null; then
+  waited=0
+  until probe_ready; do
+    if [ "$waited" -ge "$READY_TIMEOUT" ]; then
+      log "⚠️  Database not ready after ${READY_TIMEOUT}s (probe ${BACKUP_READY_PROBE:-acore_auth.account} absent); proceeding anyway"
+      break
+    fi
+    if [ $((waited % 60)) -eq 0 ]; then
+      log "Waiting for database import to complete (probe ${BACKUP_READY_PROBE:-acore_auth.account})..."
+    fi
+    sleep 10; waited=$((waited + 10))
+  done
+  if [ "$waited" -lt "$READY_TIMEOUT" ]; then
+    log "✅ Database ready (probe ${BACKUP_READY_PROBE:-acore_auth.account} present)"
+  fi
+fi
+
 last_backup=$(date +%s)
 # Seed the daily tracker from disk so a restart neither skips nor duplicates.
 last_daily_date=""
 if find "$DAILY_DIR" -mindepth 1 -maxdepth 1 -type d -name "$(date '+%Y%m%d')_*" -print -quit 2>/dev/null | grep -q .; then
   last_daily_date=$(date '+%F')
 fi
-log "ℹ️  First backup will run in ${BACKUP_INTERVAL_MINUTES} minutes"
+if [ "$(date '+%H')" -ge "$DAILY_TIME" ] 2>/dev/null && [ "$last_daily_date" != "$(date '+%F')" ]; then
+  log "ℹ️  Started after ${DAILY_TIME}:00 with no daily backup today - taking one now"
+else
+  log "ℹ️  First backup will run in ${BACKUP_INTERVAL_MINUTES} minutes"
+fi
 
 while true; do
   now=$(date +%s); hour=$(date '+%H'); today=$(date '+%F')

@@ -24,4 +24,27 @@ done
 line=$(BACKUP_DAILY_TIME=9 SCHEDULER_ONE_SHOT=1 bash "$ROOT/scripts/backup-scheduler.sh" 2>/dev/null | grep "scheduler starting")
 echo "$line" | grep -q "at 09:00" && ok "DAILY_TIME zero-padded" || bad "DAILY_TIME wrong: $line"
 
+# Readiness gate (loop mode): probe absent -> waits, then proceeds on timeout
+rm -rf "$BACKUP_DIR_BASE"
+glog=$(STUB_ACCOUNT_TABLE=0 BACKUP_READY_TIMEOUT_SECONDS=10 BACKUP_DAILY_TIME=23 \
+  BACKUP_INTERVAL_MINUTES=999 timeout 16 bash "$ROOT/scripts/backup-scheduler.sh" 2>/dev/null)
+echo "$glog" | grep -q "Waiting for database import" && ok "gate waits when probe absent" || bad "gate did not wait"
+echo "$glog" | grep -q "proceeding anyway" && ok "gate proceeds after timeout" || bad "gate never timed out"
+
+# Readiness gate: probe present -> ready immediately; post-DAILY_TIME fresh
+# start announces and takes the immediate daily
+rm -rf "$BACKUP_DIR_BASE"
+glog=$(STUB_ACCOUNT_TABLE=1 BACKUP_READY_TIMEOUT_SECONDS=60 BACKUP_DAILY_TIME=00 \
+  BACKUP_INTERVAL_MINUTES=999 timeout 8 bash "$ROOT/scripts/backup-scheduler.sh" 2>/dev/null)
+echo "$glog" | grep -q "Database ready" && ok "gate passes when probe present" || bad "gate blocked despite ready probe"
+echo "$glog" | grep -q "taking one now" && ok "post-daily-time start announces immediate daily" || bad "immediate-daily announcement missing"
+n=$(find "$BACKUP_DIR_BASE/daily" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)
+[ "$n" -eq 1 ] && ok "immediate daily taken after gate" || bad "expected 1 daily dir, got $n"
+
+# Readiness gate disabled with timeout 0
+rm -rf "$BACKUP_DIR_BASE"
+glog=$(STUB_ACCOUNT_TABLE=0 BACKUP_READY_TIMEOUT_SECONDS=0 BACKUP_DAILY_TIME=23 \
+  BACKUP_INTERVAL_MINUTES=999 timeout 4 bash "$ROOT/scripts/backup-scheduler.sh" 2>/dev/null)
+echo "$glog" | grep -q "Waiting for database import" && bad "gate ran despite timeout 0" || ok "gate disabled by timeout 0"
+
 echo; echo "passed=$pass failed=$fail"; [ "$fail" -eq 0 ]

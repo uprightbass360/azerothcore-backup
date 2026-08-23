@@ -131,6 +131,8 @@ pre-restore safety backups) are never auto-pruned.
 | `TZ` | `UTC` | |
 | `BACKUP_HEALTHCHECK_MAX_MINUTES` | `120` | freshness window for the container healthcheck; see Alerting |
 | `BACKUP_HEALTHCHECK_GRACE_SECONDS` | `4500` | grace period (seconds since container start) before freshness is enforced |
+| `BACKUP_READY_PROBE` | `acore_auth.account` | table whose existence marks the database as imported; the scheduler takes no backups until it appears (fresh installs may still be importing when this container starts) |
+| `BACKUP_READY_TIMEOUT_SECONDS` | `900` | how long the scheduler waits for the readiness probe before proceeding anyway; `0` disables the gate |
 | `BACKUP_DIR_BASE` | `/backups` | mount point for the backup volume; only override this if you also change the volume target |
 
 Volume: `/backups` (named volume, bind mount, or NFS — all supported; no
