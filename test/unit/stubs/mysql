@@ -1,0 +1,15 @@
+#!/bin/bash
+# Stub: understands the queries lib.sh issues. Behavior driven by env:
+#   STUB_EXISTING_DBS  space-separated dbs that "exist" (USE succeeds)
+#   STUB_ACCOUNT_TABLE 1 = acore_auth.account exists
+args="$*"
+case "$args" in
+  *"USE "*)
+    db=$(echo "$args" | sed -n 's/.*USE .\([a-z0-9_]*\).*/\1/p')
+    for d in ${STUB_EXISTING_DBS:-}; do [ "$d" = "$db" ] && exit 0; done
+    exit 1 ;;
+  *information_schema.tables*account*) [ "${STUB_ACCOUNT_TABLE:-0}" = "1" ] && echo 1 || echo 0; exit 0 ;;
+  *"SELECT VERSION()"*) echo "8.4.0-stub"; exit 0 ;;
+  *size_mb*) echo "5.00"; exit 0 ;;
+  *) exit 0 ;;
+esac
