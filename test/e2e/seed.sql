@@ -1,0 +1,12 @@
+CREATE DATABASE IF NOT EXISTS acore_auth;
+CREATE DATABASE IF NOT EXISTS acore_world;
+CREATE DATABASE IF NOT EXISTS acore_characters;
+CREATE DATABASE IF NOT EXISTS acore_playerbots;
+CREATE TABLE acore_auth.account (id INT PRIMARY KEY AUTO_INCREMENT, username VARCHAR(32));
+INSERT INTO acore_auth.account (username) VALUES ('ARTIMAGE'),('HAMSAMMY');
+CREATE TABLE acore_characters.characters (guid INT PRIMARY KEY, name VARCHAR(24), level INT);
+INSERT INTO acore_characters.characters VALUES (1,'Testchar',80),(2,'Otherchar',42);
+CREATE TABLE acore_world.version (v VARCHAR(16));
+INSERT INTO acore_world.version VALUES ('e2e');
+CREATE TABLE acore_playerbots.bots (id INT PRIMARY KEY);
+INSERT INTO acore_playerbots.bots VALUES (1),(2),(3);
