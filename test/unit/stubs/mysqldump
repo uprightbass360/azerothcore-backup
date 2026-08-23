@@ -1,0 +1,7 @@
+#!/bin/bash
+# Stub: last arg is the database name. STUB_FAIL_DB makes that db fail.
+db="${*: -1}"
+if [ "$db" = "${STUB_FAIL_DB:-}" ]; then echo "mysqldump: stub error" >&2; exit 2; fi
+echo "-- MySQL dump (stub)"
+echo "CREATE DATABASE IF NOT EXISTS \`$db\`;"
+echo "-- Dump completed on stub"
