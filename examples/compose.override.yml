@@ -1,0 +1,17 @@
+# Drop this next to an upstream-style AzerothCore docker-compose.yml as
+# docker-compose.override.yml (or merge into an existing override file).
+services:
+  ac-backup:
+    image: uprightbass360/azerothcore-backup:latest
+    container_name: ac-backup
+    networks: [ac-network]
+    environment:
+      MYSQL_HOST: ac-database
+      MYSQL_PASSWORD: ${DOCKER_DB_ROOT_PASSWORD:-password}
+      BACKUP_ALERT_WEBHOOK: ${BACKUP_ALERT_WEBHOOK:-}
+    volumes:
+      - ${DOCKER_VOL_BACKUPS:-./backups}:/backups
+    depends_on:
+      ac-database:
+        condition: service_healthy
+    restart: always
