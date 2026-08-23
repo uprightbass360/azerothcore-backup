@@ -1,4 +1,4 @@
-FROM mysql:8.4
+FROM mysql:26.7
 
 # mysql:8.4 ships mysql, mysqldump, gzip, and gosu - no downloads needed.
 COPY scripts/lib.sh scripts/backup-scheduler.sh scripts/acbackup scripts/healthcheck.sh /opt/acbackup/
