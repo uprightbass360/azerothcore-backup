@@ -1,0 +1,9 @@
+# Shell scripts executed inside the Linux container must stay LF even when
+# the repo is cloned on Windows with core.autocrlf=true - CRLF endings make
+# bash fail at container start with "\r: command not found".
+* text=auto
+*.sh text eol=lf
+scripts/acbackup text eol=lf
+Dockerfile text eol=lf
+*.yml text eol=lf
+*.sql text eol=lf

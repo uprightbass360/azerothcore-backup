@@ -245,6 +245,30 @@ another unprivileged mapped user) on the server side. Either export with
 `no_root_squash` for this mount, or pre-create the four tier directories on
 the NFS server with the right ownership before first start.
 
+## Running on Windows
+
+The image is Linux and runs under Docker Desktop's WSL2 backend; inside the
+container everything behaves exactly as on a Linux host. Three things differ
+at the edges:
+
+- **Where to put `/backups`.** Prefer a named volume, or a bind mount from a
+  path inside the WSL2 filesystem (e.g. clone the project under `~` in your
+  WSL distro). A bind mount from the Windows filesystem (`C:\...` /
+  `/mnt/c/...`) also works — mtimes are preserved, which is what backup
+  ordering and the healthcheck rely on — but file I/O is noticeably slower
+  and file ownership is synthetic, so `PUID`/`PGID` are effectively ignored
+  there (harmless: the ownership fix-ups no-op silently).
+- **Clock drift after host sleep.** The WSL2 VM clock can drift after the
+  Windows host sleeps or hibernates, which skews backup timestamps and the
+  `BACKUP_DAILY_TIME` trigger until Docker Desktop (or `wsl --shutdown`)
+  restarts. If your machine sleeps regularly, check backup timestamps after
+  wake, or run the stack on an always-on host.
+- **Building the image yourself.** Pulled images are unaffected, but if you
+  clone this repo on Windows and build locally, Git's `core.autocrlf=true`
+  would turn the shell scripts CRLF and break the container at start
+  (`\r: command not found`). The repo's `.gitattributes` forces LF on all
+  scripts to prevent exactly that — don't override it.
+
 ## Alerting
 
 Set `BACKUP_ALERT_WEBHOOK` to a URL and the container will `curl -fsS -m 10
