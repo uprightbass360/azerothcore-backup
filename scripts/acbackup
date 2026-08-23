@@ -1,0 +1,157 @@
+#!/bin/bash
+# acbackup — list / verify / now / restore / auto-restore for azerothcore-backup.
+set -u
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib.sh
+source "$SCRIPT_DIR/lib.sh"
+init_credentials
+
+usage() {
+  cat <<'EOF'
+Usage: acbackup <command> [args]
+
+Commands:
+  list                          Show all backups in every tier with status
+  verify <dir|latest>           Check marker + gzip + dump trailer of a backup
+  now [--label NAME]            Take an on-demand backup into manual/
+  restore <dir|latest> [opts]   Restore a backup into MySQL
+      --db NAME                 Restore only this database (repeatable)
+      --yes                     Skip interactive confirmation
+      --no-safety-backup        Skip the automatic pre-restore backup
+  auto-restore                  Restore newest complete backup if DB is empty
+                                (probe table: $AUTO_RESTORE_PROBE)
+EOF
+  exit 1
+}
+
+resolve_dir() {
+  local arg="$1"
+  if [ "$arg" = "latest" ]; then
+    newest_complete_backup || { log "❌ No complete backup found in $BACKUP_DIR_BASE"; exit 1; }
+  else
+    [ -d "$arg" ] || { log "❌ Not a directory: $arg"; exit 1; }
+    echo "${arg%/}"
+  fi
+}
+
+cmd_list() {
+  local tier d status size age
+  for tier in hourly daily monthly manual; do
+    local dir="$BACKUP_DIR_BASE/$tier"
+    [ -d "$dir" ] || continue
+    echo "== $tier =="
+    local found=0
+    for d in "$dir"/*/; do
+      [ -d "$d" ] || continue
+      found=1
+      status=incomplete; is_complete "$d" && status=complete
+      size=$(du -sh "$d" 2>/dev/null | cut -f1)
+      age=$(basename "$d")
+      printf '  %s  %-10s %s\n' "$age" "$status" "$size"
+    done
+    [ "$found" -eq 0 ] && echo "  (none)"
+  done
+}
+
+cmd_verify() {
+  local dir; dir=$(resolve_dir "${1:?usage: acbackup verify <dir|latest>}")
+  is_complete "$dir" || { log "❌ $dir has no completion marker"; return 1; }
+  local f bad=0
+  for f in "$dir"/*.sql.gz; do
+    [ -f "$f" ] || { log "❌ no dumps in $dir"; return 1; }
+    if verify_dump "$f"; then log "✅ $(basename "$f") verified"
+    else log "❌ $(basename "$f") FAILED verification"; bad=1; fi
+  done
+  [ "$bad" -eq 0 ] && log "✅ $dir verified" || return 1
+}
+
+cmd_now() {
+  local label="manual"
+  while [ $# -gt 0 ]; do case "$1" in
+    --label) label="${2:?--label needs a value}"; shift 2;;
+    *) usage;;
+  esac; done
+  mkdir -p "$MANUAL_DIR"
+  run_backup "$MANUAL_DIR/${label}-$(date '+%Y%m%d_%H%M%S')" manual
+}
+
+cmd_restore() {
+  local target="${1:?usage: acbackup restore <dir|latest>}"; shift
+  local -a only_dbs=()
+  local yes=0 safety=1
+  while [ $# -gt 0 ]; do case "$1" in
+    --db) only_dbs+=("${2:?--db needs a value}"); shift 2;;
+    --yes) yes=1; shift;;
+    --no-safety-backup) safety=0; shift;;
+    *) usage;;
+  esac; done
+  local dir; dir=$(resolve_dir "$target")
+  is_complete "$dir" || { log "❌ Refusing to restore: $dir has no completion marker"; return 1; }
+  local -a files=()
+  local f
+  for f in "$dir"/*.sql.gz; do
+    [ -f "$f" ] || continue
+    if [ ${#only_dbs[@]} -gt 0 ]; then
+      local db_name; db_name=$(basename "$f" .sql.gz)
+      local want=0 o; for o in "${only_dbs[@]}"; do [ "$o" = "$db_name" ] && want=1; done
+      [ "$want" -eq 1 ] || continue
+    fi
+    verify_dump "$f" || { log "❌ Refusing to restore: $(basename "$f") failed verification"; return 1; }
+    files+=("$f")
+  done
+  [ ${#files[@]} -gt 0 ] || { log "❌ Nothing to restore from $dir"; return 1; }
+  log "Restore plan from $dir:"
+  for f in "${files[@]}"; do log "  - $(basename "$f" .sql.gz)"; done
+  if [ "$yes" -ne 1 ]; then
+    if [ -t 0 ]; then
+      read -r -p "Type RESTORE to proceed (drops and recreates these databases): " reply
+      [ "$reply" = "RESTORE" ] || { log "Cancelled."; return 1; }
+    else
+      log "❌ Confirmation required: re-run with --yes"; return 1
+    fi
+  fi
+  if [ "$safety" -eq 1 ]; then
+    log "Taking pre-restore safety backup..."
+    run_backup "$MANUAL_DIR/pre-restore-$(date '+%Y%m%d_%H%M%S')" manual || \
+      log "⚠️  Pre-restore safety backup incomplete (continuing; source backup is verified)"
+  fi
+  for f in "${files[@]}"; do
+    log "Restoring $(basename "$f" .sql.gz)..."
+    if ! zcat "$f" | mysql_cmd; then
+      alert "restore of $(basename "$f") from $dir FAILED"
+      return 1
+    fi
+  done
+  log "✅ Restore complete from $dir"
+}
+
+cmd_auto_restore() {
+  local probe="${AUTO_RESTORE_PROBE:-acore_auth.account}"
+  local schema="${probe%%.*}" table="${probe##*.}"
+  local n
+  n=$(mysql_cmd -s -N -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='$schema' AND table_name='$table';" 2>/dev/null || echo probe-failed)
+  case "$n" in
+    1) log "Database populated ($probe exists) - auto-restore not needed"; return 0;;
+    0) : ;;
+    *) log "⚠️  Auto-restore probe failed (cannot reach MySQL); skipping"; return 0;;
+  esac
+  local dir
+  if ! dir=$(newest_complete_backup); then
+    log "Database empty but no complete backup available - starting fresh"
+    return 0
+  fi
+  alert "auto-restore: database empty, restoring newest complete backup $(basename "$dir")"
+  log "Restoring $dir ..."
+  cmd_restore "$dir" --yes --no-safety-backup
+}
+
+cmd="${1:-}"; shift 2>/dev/null || true
+case "$cmd" in
+  list) cmd_list "$@";;
+  verify) cmd_verify "$@";;
+  now) cmd_now "$@";;
+  restore) cmd_restore "$@";;
+  auto-restore) cmd_auto_restore "$@";;
+  *) usage;;
+esac
