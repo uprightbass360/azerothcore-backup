@@ -19,6 +19,9 @@ an empty database. Point it at your `ac-database` service, mount a
 
 ## Quick start
 
+Published image tags are `latest` and dated `YYYYMMDD` snapshots (e.g.
+`20260823`); semver tags are deferred for now.
+
 Drop `examples/compose.override.yml` next to your existing AzerothCore
 `docker-compose.yml` as `docker-compose.override.yml` (or merge its
 `ac-backup` service into an override file you already have):
@@ -127,7 +130,7 @@ pre-restore safety backups) are never auto-pruned.
 | `PUID` / `PGID` | `1000` / `1000` | backup file ownership |
 | `TZ` | `UTC` | |
 | `BACKUP_HEALTHCHECK_MAX_MINUTES` | `120` | freshness window for the container healthcheck; see Alerting |
-| `BACKUP_HEALTHCHECK_GRACE_SECONDS` | `4500` | grace period (container uptime, seconds) before freshness is enforced |
+| `BACKUP_HEALTHCHECK_GRACE_SECONDS` | `4500` | grace period (seconds since container start) before freshness is enforced |
 | `BACKUP_DIR_BASE` | `/backups` | mount point for the backup volume; only override this if you also change the volume target |
 
 Volume: `/backups` (named volume, bind mount, or NFS — all supported; no
@@ -197,6 +200,12 @@ complete recipe for rebuilding a server from scratch: point a fresh MySQL
 volume and this image's backup volume at the same paths, set
 `AUTO_RESTORE=1`, and start the stack.
 
+If the MySQL probe can't reach the database at container start (for
+example, `ac-database` isn't ready yet), auto-restore is skipped with a
+warning rather than risking a bad decision — fail-safe rather than
+fail-open — so use `depends_on: condition: service_healthy` on the
+`ac-database` service (as the examples do) to avoid this race entirely.
+
 ## NFS and permissions
 
 The container runs `mysqldump`/`mysql`/the scheduler as `PUID:PGID` (default
@@ -259,7 +268,9 @@ catches a scheduler that's silently stopped producing backups, not just one
 that's crashed. To avoid a false-unhealthy on a brand-new container before
 its first backup has had a chance to run, the freshness check is skipped
 during a grace period of `BACKUP_HEALTHCHECK_GRACE_SECONDS` (default
-`4500`, i.e. 75 minutes) measured from container uptime; after the grace
+`4500`, i.e. 75 minutes) measured from a container-start timestamp the
+entrypoint writes to `/run/acbackup.started` (not `/proc/uptime`, which in
+Docker reflects the host's uptime, not the container's); after the grace
 period elapses, the freshness window is enforced normally.
 
 ## Development
