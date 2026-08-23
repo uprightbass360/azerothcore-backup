@@ -1,0 +1,21 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "sunday"
+    groups:
+      actions:
+        patterns: ["*"]
+    labels: ["ci"]
+    commit-message:
+      prefix: "chore"
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "sunday"
+    labels: ["ci"]
+    commit-message:
+      prefix: "chore"
