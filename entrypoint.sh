@@ -6,6 +6,10 @@ PUID="${PUID:-1000}"
 PGID="${PGID:-1000}"
 BACKUP_DIR_BASE="${BACKUP_DIR_BASE:-/backups}"
 
+# Container-start stamp for the healthcheck's startup grace period (measures
+# container uptime, not host uptime - /proc/uptime is the host's in Docker).
+date +%s > /run/acbackup.started
+
 # Tier roots only - never recursive over months of (possibly NFS) backups.
 mkdir -p "$BACKUP_DIR_BASE"/{hourly,daily,monthly,manual}
 chown "$PUID:$PGID" "$BACKUP_DIR_BASE" "$BACKUP_DIR_BASE"/{hourly,daily,monthly,manual} 2>/dev/null || true

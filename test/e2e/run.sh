@@ -40,6 +40,13 @@ echo "--- verify passes, corrupt copy fails ---"
 $C exec -T backup acbackup verify "$B" || fail "verify rejected good backup"
 $C exec -T backup sh -c "cp -r $B /backups/manual/corrupt && truncate -s 30 /backups/manual/corrupt/acore_world.sql.gz"
 $C exec -T backup acbackup verify /backups/manual/corrupt && fail "verify accepted corrupt backup" || true
+# The cp -r carried over the good backup's .backup_complete marker, which
+# never went through real verification for this directory - drop it so this
+# intentionally-corrupt fixture can't be mistaken for a real completed
+# backup by newest_complete_backup (which trusts the marker, same as
+# production: only run_backup is supposed to write one, and only after
+# every dump verifies).
+$C exec -T backup sh -c "rm -f /backups/manual/corrupt/.backup_complete"
 
 echo "--- wipe and restore ---"
 $C exec -T db mysql -uroot -pe2epass -e "DROP DATABASE acore_characters; DROP DATABASE acore_auth;"

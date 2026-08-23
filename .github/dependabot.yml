@@ -19,3 +19,6 @@ updates:
     labels: ["ci"]
     commit-message:
       prefix: "chore"
+    ignore:
+      - dependency-name: "mysql"
+        update-types: ["version-update:semver-major"]

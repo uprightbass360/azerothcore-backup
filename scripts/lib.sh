@@ -128,14 +128,14 @@ run_backup() {
   return 1
 }
 
-# Newest complete backup across all tiers, by basename timestamp.
+# Newest complete backup across all tiers, by completion marker mtime.
+# (Not basename: labeled manual dirs like pre-restore-<ts> or <label>-<ts>
+# start with letters, which sort after digits lexicographically, so a
+# basename comparison would let them beat every timestamped backup forever.)
 newest_complete_backup() {
-  local d best="" best_ts=""
-  for d in "$MANUAL_DIR"/*/ "$MONTHLY_DIR"/*/ "$DAILY_DIR"/*/ "$HOURLY_DIR"/*/; do
-    [ -d "$d" ] || continue
-    is_complete "$d" || continue
-    local ts; ts=$(basename "$d")
-    if [ -z "$best_ts" ] || [[ "$ts" > "$best_ts" ]]; then best_ts="$ts"; best="${d%/}"; fi
-  done
-  [ -n "$best" ] && echo "$best" || return 1
+  local marker
+  marker=$(find "$MANUAL_DIR" "$MONTHLY_DIR" "$DAILY_DIR" "$HOURLY_DIR" \
+      -mindepth 2 -maxdepth 2 -name '.backup_complete' -printf '%T@ %h\n' 2>/dev/null \
+    | sort -nr | head -1 | cut -d' ' -f2-)
+  [ -n "$marker" ] && echo "$marker" || return 1
 }

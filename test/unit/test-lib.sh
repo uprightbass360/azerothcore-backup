@@ -50,10 +50,29 @@ python3 - "$BACKUP_DIR_BASE/hourly/two/manifest.json" <<'PY' && ok "failed_datab
 import json,sys; assert json.load(open(sys.argv[1]))["failed_databases"]==["acore_world"]
 PY
 
-# newest_complete_backup: prefers newest complete across tiers, skips incomplete
+# newest_complete_backup: prefers newest complete across tiers (by marker
+# mtime), skips incomplete. hourly/one's marker is made the newest by mtime.
 mkdir -p "$BACKUP_DIR_BASE/daily/20260101_000000" && touch "$BACKUP_DIR_BASE/daily/20260101_000000/.backup_complete"
-mkdir -p "$BACKUP_DIR_BASE/manual/20270101_000000"   # newer but incomplete
+touch -d '2020-01-01' "$BACKUP_DIR_BASE/daily/20260101_000000/.backup_complete"
+mkdir -p "$BACKUP_DIR_BASE/manual/20270101_000000"   # newer name but incomplete (no marker)
+touch "$BACKUP_DIR_BASE/hourly/one/.backup_complete"  # bump mtime to now, newest of the complete markers
 n=$(newest_complete_backup)
 case "$n" in */hourly/one) ok "newest_complete_backup picks newest complete";; *) bad "newest picked: $n";; esac
+
+# newest_complete_backup: orders by marker mtime, not basename lexicographic
+# order. A labeled manual dir (e.g. pre-restore-<ts>) starts with a letter,
+# which sorts after digits, so a basename comparison would wrongly let an
+# OLD labeled manual backup beat a NEWER timestamped one forever.
+mkdir -p "$BACKUP_DIR_BASE/manual/pre-restore-20200101_000000"
+touch "$BACKUP_DIR_BASE/manual/pre-restore-20200101_000000/.backup_complete"
+touch -d '2020-01-01' "$BACKUP_DIR_BASE/manual/pre-restore-20200101_000000/.backup_complete"
+n=$(newest_complete_backup)
+case "$n" in */hourly/one) ok "newest_complete_backup: newer timestamped tier beats older labeled manual";; *) bad "newest picked: $n (expected hourly/one)";; esac
+
+# ... but a labeled manual backup that IS genuinely newest still wins.
+mkdir -p "$BACKUP_DIR_BASE/manual/pre-restore-20990101_000000"
+touch "$BACKUP_DIR_BASE/manual/pre-restore-20990101_000000/.backup_complete"
+n=$(newest_complete_backup)
+case "$n" in */manual/pre-restore-20990101_000000) ok "newest_complete_backup: genuinely newest labeled manual wins";; *) bad "newest picked: $n (expected manual/pre-restore-20990101_000000)";; esac
 
 echo; echo "passed=$pass failed=$fail"; [ "$fail" -eq 0 ]
