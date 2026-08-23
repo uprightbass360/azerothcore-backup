@@ -39,7 +39,16 @@ $C exec -T backup sh -c "ls $B/acore_playerbots.sql.gz" >/dev/null || fail "play
 echo "--- verify passes, corrupt copy fails ---"
 $C exec -T backup acbackup verify "$B" || fail "verify rejected good backup"
 $C exec -T backup sh -c "cp -r $B /backups/manual/corrupt && truncate -s 30 /backups/manual/corrupt/acore_world.sql.gz"
-$C exec -T backup acbackup verify /backups/manual/corrupt && fail "verify accepted corrupt backup" || true
+# Deliberate-corruption assertion: the rejection output (with its ❌ lines)
+# is captured and shown ONLY if the assertion fails, so a passing run's log
+# never contains a spurious failure marker. A real failure (verify
+# accepting the corrupt copy) prints the evidence and trips the gate.
+if corrupt_out=$($C exec -T backup acbackup verify /backups/manual/corrupt 2>&1); then
+  echo "$corrupt_out"
+  fail "verify accepted corrupt backup"
+else
+  echo "corrupted backup correctly rejected (rejection output suppressed)"
+fi
 # The cp -r carried over the good backup's .backup_complete marker, which
 # never went through real verification for this directory - drop it so this
 # intentionally-corrupt fixture can't be mistaken for a real completed
