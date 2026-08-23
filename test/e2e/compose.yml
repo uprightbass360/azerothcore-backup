@@ -1,0 +1,24 @@
+services:
+  db:
+    image: mysql:${MYSQL_TAG:-8.4}
+    environment:
+      MYSQL_ROOT_PASSWORD: e2epass
+    healthcheck:
+      test: ["CMD-SHELL", "mysql -uroot -pe2epass -e 'SELECT 1' >/dev/null 2>&1"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+  backup:
+    image: azerothcore-backup:dev
+    environment:
+      MYSQL_HOST: db
+      MYSQL_PASSWORD: e2epass
+      BACKUP_INTERVAL_MINUTES: 60
+      PUID: "1234"      # deliberately mismatched vs the bind mount owner
+      PGID: "1234"
+      AUTO_RESTORE: ${AUTO_RESTORE:-0}
+    volumes:
+      - ./volume:/backups
+    depends_on:
+      db:
+        condition: service_healthy
